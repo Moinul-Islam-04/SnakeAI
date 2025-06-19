@@ -8,7 +8,7 @@ GRID_HEIGHT = 20 # Height of the game grid in cells
 CELL_SIZE = 30   # Size of each cell in pixels
 SCREEN_WIDTH = GRID_WIDTH * CELL_SIZE
 SCREEN_HEIGHT = GRID_HEIGHT * CELL_SIZE
-GAME_SPEED = 20 # The speed of the game (frames per second)
+GAME_SPEED = 10 # Increased speed since AI is now smarter
 
 # --- Colors ---
 BLACK = (0, 0, 0)
@@ -23,74 +23,89 @@ UP = (0, -1)
 DOWN = (0, 1)
 LEFT = (-1, 0)
 RIGHT = (1, 0)
+DIRECTIONS = [UP, DOWN, LEFT, RIGHT]
 
-def generate_hamiltonian_cycle(width, height):
-    """
-    Generates a Hamiltonian cycle for a grid of given width and height.
-    This specific algorithm creates a simple, serpentine path that covers the entire grid.
-    The path is returned as a dictionary mapping each grid cell (x, y) to the next cell in the cycle.
-    """
-    path = {}
-    for y in range(height):
-        if y % 2 == 0:  # Moving right on even rows
-            for x in range(width - 1):
-                path[(x, y)] = (x + 1, y)
-            if y < height - 1:
-                path[(width - 1, y)] = (width - 1, y + 1) # Move down to the next row
-        else:  # Moving left on odd rows
-            for x in range(width - 1, 0, -1):
-                path[(x, y)] = (x - 1, y)
-            if y < height - 1:
-                path[(0, y)] = (0, y + 1) # Move down to the next row
+
+
+class SimpleSnakeAI:
+    """Simple and efficient AI that moves directly towards food using delta calculation."""
     
-    # Complete the cycle by connecting the last node to the first
-    path[(0, height - 1)] = (0, 0)
-
-    # Handle the final node on the last row based on row parity
-    if height % 2 != 0: # Odd number of rows, last row moves left
-        path[(0, height - 1)] = (0,0) # This should actually go up, but let's connect to start
-        # The last element in a right-moving row needs to be connected
-        path[(width - 1, height - 1)] = (0, 0) # This needs a better wrap-around logic
-        # Correct final connection for serpentine path
-        if width > 1:
-             path[(0, height-1)] = (0, height-2) if height > 1 else (0,0)
-             path[(width-1,height-1)] = (width-2, height-1)
-        # Manually create the loop for the last row
-        if height % 2 == 1: # Last row moved right
-            path[(width - 1, height - 1)] = (0, 0)
-        else: # Last row moved left
-            path[(0, height - 1)] = (0,0)
-
-
-    # More robust serpentine path generation
-    path = {}
-    for y in range(height):
-        if y % 2 == 0:  # Even row (0, 2, ...), move right
-            for x in range(width - 1):
-                path[(x, y)] = (x + 1, y)
-            if y + 1 < height:
-                path[(width - 1, y)] = (width - 1, y + 1)
-        else:  # Odd row (1, 3, ...), move left
-            for x in range(width - 1, 0, -1):
-                path[(x, y)] = (x - 1, y)
-            if y + 1 < height:
-                path[(0, y)] = (0, y + 1)
+    def get_next_move(self, snake, food_pos):
+        """Determine the next best move using simple delta calculation."""
+        head = snake.get_head_position()
+        
+        # Calculate deltas
+        dx = food_pos[0] - head[0]
+        dy = food_pos[1] - head[1]
+        
+        # Determine preferred directions based on larger delta
+        preferred_directions = []
+        
+        # Prioritize the direction with the larger absolute delta
+        if abs(dx) >= abs(dy):
+            # Horizontal movement is preferred
+            if dx > 0:
+                preferred_directions.append(RIGHT)
+            elif dx < 0:
+                preferred_directions.append(LEFT)
+            
+            # Then vertical
+            if dy > 0:
+                preferred_directions.append(DOWN)
+            elif dy < 0:
+                preferred_directions.append(UP)
+        else:
+            # Vertical movement is preferred
+            if dy > 0:
+                preferred_directions.append(DOWN)
+            elif dy < 0:
+                preferred_directions.append(UP)
+            
+            # Then horizontal
+            if dx > 0:
+                preferred_directions.append(RIGHT)
+            elif dx < 0:
+                preferred_directions.append(LEFT)
+        
+        # Try preferred directions first
+        for direction in preferred_directions:
+            next_pos = (head[0] + direction[0], head[1] + direction[1])
+            if self.is_safe_move(next_pos, snake):
+                return direction
+        
+        # If preferred directions are blocked, try any safe direction
+        for direction in DIRECTIONS:
+            next_pos = (head[0] + direction[0], head[1] + direction[1])
+            if self.is_safe_move(next_pos, snake):
+                return direction
+        
+        # Last resort: continue in current direction if possible
+        next_pos = (head[0] + snake.direction[0], head[1] + snake.direction[1])
+        if self.is_safe_move(next_pos, snake):
+            return snake.direction
+        
+        # Emergency fallback
+        return RIGHT
     
-    # Complete the loop
-    path[(0, height - 1)] = (0, 0) # This is for an even height grid
-    if height % 2 == 1: # If height is odd, last row moved right
-        path[(width - 1, height - 1)] = (0, 0)
-    else: # If height is even, last row moved left
-        path[(0, height - 1)] = (0, 0)
-
-
-    return path
+    def is_safe_move(self, pos, snake):
+        """Check if a position is safe (within bounds and not on snake body)."""
+        x, y = pos
+        
+        # Check boundaries
+        if x < 0 or x >= GRID_WIDTH or y < 0 or y >= GRID_HEIGHT:
+            return False
+        
+        # Check if position is on snake body
+        if pos in snake.body:
+            return False
+        
+        return True
 
 class Snake:
     """Represents the snake in the game."""
     def __init__(self):
         self.body = [(GRID_WIDTH // 2, GRID_HEIGHT // 2)]
-        self.direction = random.choice([UP, DOWN, LEFT, RIGHT])
+        self.direction = RIGHT
         self.length = 1
 
     def get_head_position(self):
@@ -104,9 +119,11 @@ class Snake:
         else:
             self.direction = point
 
-    def move(self, next_pos):
-        """Moves the snake one step forward."""
-        self.body.insert(0, next_pos)
+    def move(self):
+        """Moves the snake one step forward in current direction."""
+        head = self.get_head_position()
+        new_head = (head[0] + self.direction[0], head[1] + self.direction[1])
+        self.body.insert(0, new_head)
         if len(self.body) > self.length:
             self.body.pop()
 
@@ -116,9 +133,11 @@ class Snake:
 
     def draw(self, surface):
         """Draws the snake on the screen."""
-        for segment in self.body:
+        for i, segment in enumerate(self.body):
             r = pygame.Rect((segment[0] * CELL_SIZE, segment[1] * CELL_SIZE), (CELL_SIZE, CELL_SIZE))
-            pygame.draw.rect(surface, GREEN, r)
+            # Make head slightly different color
+            color = (0, 200, 0) if i == 0 else GREEN
+            pygame.draw.rect(surface, color, r)
             pygame.draw.rect(surface, BLACK, r, 1)
 
 class Food:
@@ -150,15 +169,13 @@ def main():
     """Main function to run the game."""
     pygame.init()
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-    pygame.display.set_caption("Snake AI - Hamiltonian Cycle")
+    pygame.display.set_caption("Snake AI - Smart Pathfinding")
     clock = pygame.time.Clock()
 
     snake = Snake()
     food = Food()
     food.randomize_position(snake.body)
-    
-    # Generate the pre-calculated path for the AI
-    hamiltonian_cycle = generate_hamiltonian_cycle(GRID_WIDTH, GRID_HEIGHT)
+    ai = SimpleSnakeAI()
 
     score = 0
     font = pygame.font.Font(None, 36)
@@ -170,32 +187,40 @@ def main():
                 sys.exit()
 
         # --- AI Logic ---
-        # The AI simply follows the pre-calculated Hamiltonian path.
-        # It doesn't need to "think" or react to the food's position.
-        current_pos = snake.get_head_position()
-        if current_pos in hamiltonian_cycle:
-            next_pos = hamiltonian_cycle[current_pos]
-        else:
-            # This case should ideally not happen in a perfect cycle.
-            # If it does, it's a bug in the cycle generation. We'll just stop.
-            print(f"Error: Position {current_pos} not in Hamiltonian cycle!")
+        # Get the next best move from our smart AI
+        next_direction = ai.get_next_move(snake, food.position)
+        snake.turn(next_direction)
+        snake.move()
+        
+        # Check for wall collision
+        head = snake.get_head_position()
+        if (head[0] < 0 or head[0] >= GRID_WIDTH or 
+            head[1] < 0 or head[1] >= GRID_HEIGHT):
+            print(f"Game Over! Hit wall. Final Score: {score}")
+            pygame.time.wait(3000)
             pygame.quit()
             sys.exit()
-
-        snake.move(next_pos)
+        
+        # Check for self collision
+        if head in snake.body[1:]:
+            print(f"Game Over! Hit self. Final Score: {score}")
+            pygame.time.wait(3000)
+            pygame.quit()
+            sys.exit()
         
         # Check for collision with food
-        if snake.get_head_position() == food.position:
+        if head == food.position:
             snake.grow()
             score += 1
             food.randomize_position(snake.body)
-            # If the snake fills the whole screen, we've won.
+            print(f"Score: {score}")
+            
+            # Check if won
             if snake.length == GRID_WIDTH * GRID_HEIGHT:
                 print("Game Won! The snake has filled the board.")
                 pygame.time.wait(3000)
                 pygame.quit()
                 sys.exit()
-
 
         # Drawing everything
         screen.fill(BLACK)
