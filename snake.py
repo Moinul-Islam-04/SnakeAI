@@ -3,12 +3,12 @@ import random
 import sys
 
 # --- Configuration ---
-GRID_WIDTH = 20  # Width of the game grid in cells
-GRID_HEIGHT = 20 # Height of the game grid in cells
+GRID_WIDTH = 5  # Width of the game grid in cells
+GRID_HEIGHT = 5 # Height of the game grid in cells
 CELL_SIZE = 30   # Size of each cell in pixels
 SCREEN_WIDTH = GRID_WIDTH * CELL_SIZE
 SCREEN_HEIGHT = GRID_HEIGHT * CELL_SIZE
-GAME_SPEED = 10 # Increased speed since AI is now smarter
+GAME_SPEED = 20 # The speed of the game (frames per second)
 
 # --- Colors ---
 BLACK = (0, 0, 0)
@@ -23,89 +23,40 @@ UP = (0, -1)
 DOWN = (0, 1)
 LEFT = (-1, 0)
 RIGHT = (1, 0)
-DIRECTIONS = [UP, DOWN, LEFT, RIGHT]
 
-
-
-class SimpleSnakeAI:
-    """Simple and efficient AI that moves directly towards food using delta calculation."""
+def get_next_position_l1_traversal(current_pos, width, height):
+    """
+    Simple L1 traversal - zigzag pattern row by row.
+    Much simpler and more optimal than Hamiltonian cycle.
+    """
+    x, y = current_pos
     
-    def get_next_move(self, snake, food_pos):
-        """Determine the next best move using simple delta calculation."""
-        head = snake.get_head_position()
-        
-        # Calculate deltas
-        dx = food_pos[0] - head[0]
-        dy = food_pos[1] - head[1]
-        
-        # Determine preferred directions based on larger delta
-        preferred_directions = []
-        
-        # Prioritize the direction with the larger absolute delta
-        if abs(dx) >= abs(dy):
-            # Horizontal movement is preferred
-            if dx > 0:
-                preferred_directions.append(RIGHT)
-            elif dx < 0:
-                preferred_directions.append(LEFT)
-            
-            # Then vertical
-            if dy > 0:
-                preferred_directions.append(DOWN)
-            elif dy < 0:
-                preferred_directions.append(UP)
+    # If we're on an even row (0, 2, 4...), move right
+    if y % 2 == 0:
+        if x < width - 1:
+            return (x + 1, y)  # Move right
         else:
-            # Vertical movement is preferred
-            if dy > 0:
-                preferred_directions.append(DOWN)
-            elif dy < 0:
-                preferred_directions.append(UP)
-            
-            # Then horizontal
-            if dx > 0:
-                preferred_directions.append(RIGHT)
-            elif dx < 0:
-                preferred_directions.append(LEFT)
-        
-        # Try preferred directions first
-        for direction in preferred_directions:
-            next_pos = (head[0] + direction[0], head[1] + direction[1])
-            if self.is_safe_move(next_pos, snake):
-                return direction
-        
-        # If preferred directions are blocked, try any safe direction
-        for direction in DIRECTIONS:
-            next_pos = (head[0] + direction[0], head[1] + direction[1])
-            if self.is_safe_move(next_pos, snake):
-                return direction
-        
-        # Last resort: continue in current direction if possible
-        next_pos = (head[0] + snake.direction[0], head[1] + snake.direction[1])
-        if self.is_safe_move(next_pos, snake):
-            return snake.direction
-        
-        # Emergency fallback
-        return RIGHT
-    
-    def is_safe_move(self, pos, snake):
-        """Check if a position is safe (within bounds and not on snake body)."""
-        x, y = pos
-        
-        # Check boundaries
-        if x < 0 or x >= GRID_WIDTH or y < 0 or y >= GRID_HEIGHT:
-            return False
-        
-        # Check if position is on snake body
-        if pos in snake.body:
-            return False
-        
-        return True
+            # End of even row - check if we're at the bottom
+            if y >= height - 1:
+                return (0, 0)  # Wrap to start
+            else:
+                return (x, y + 1)  # Move down to next row
+    # If we're on an odd row (1, 3, 5...), move left
+    else:
+        if x > 0:
+            return (x - 1, y)  # Move left
+        else:
+            # End of odd row - check if we're at the bottom
+            if y >= height - 1:
+                return (0, 0)  # Wrap to start
+            else:
+                return (x, y + 1)  # Move down to next row
 
 class Snake:
     """Represents the snake in the game."""
     def __init__(self):
-        self.body = [(GRID_WIDTH // 2, GRID_HEIGHT // 2)]
-        self.direction = RIGHT
+        self.body: list[tuple[int, int]] = [(GRID_WIDTH // 2, GRID_HEIGHT // 2)]
+        self.direction = random.choice([UP, DOWN, LEFT, RIGHT])
         self.length = 1
 
     def get_head_position(self):
@@ -119,11 +70,9 @@ class Snake:
         else:
             self.direction = point
 
-    def move(self):
-        """Moves the snake one step forward in current direction."""
-        head = self.get_head_position()
-        new_head = (head[0] + self.direction[0], head[1] + self.direction[1])
-        self.body.insert(0, new_head)
+    def move(self, next_pos):
+        """Moves the snake one step forward."""
+        self.body.insert(0, next_pos)
         if len(self.body) > self.length:
             self.body.pop()
 
@@ -133,11 +82,9 @@ class Snake:
 
     def draw(self, surface):
         """Draws the snake on the screen."""
-        for i, segment in enumerate(self.body):
+        for segment in self.body:
             r = pygame.Rect((segment[0] * CELL_SIZE, segment[1] * CELL_SIZE), (CELL_SIZE, CELL_SIZE))
-            # Make head slightly different color
-            color = (0, 200, 0) if i == 0 else GREEN
-            pygame.draw.rect(surface, color, r)
+            pygame.draw.rect(surface, GREEN, r)
             pygame.draw.rect(surface, BLACK, r, 1)
 
 class Food:
@@ -169,14 +116,18 @@ def main():
     """Main function to run the game."""
     pygame.init()
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-    pygame.display.set_caption("Snake AI - Smart Pathfinding")
+    pygame.display.set_caption("Snake AI - L1 Traversal")
     clock = pygame.time.Clock()
 
     snake = Snake()
+    
+    # Start the snake at position (0,0) for L1 traversal
+    start_pos: tuple[int, int] = (0, 0)
+    snake.body = [start_pos]
+
     food = Food()
     food.randomize_position(snake.body)
-    ai = SimpleSnakeAI()
-
+    
     score = 0
     font = pygame.font.Font(None, 36)
 
@@ -186,41 +137,32 @@ def main():
                 pygame.quit()
                 sys.exit()
 
-        # --- AI Logic ---
-        # Get the next best move from our smart AI
-        next_direction = ai.get_next_move(snake, food.position)
-        snake.turn(next_direction)
-        snake.move()
-        
-        # Check for wall collision
-        head = snake.get_head_position()
-        if (head[0] < 0 or head[0] >= GRID_WIDTH or 
-            head[1] < 0 or head[1] >= GRID_HEIGHT):
-            print(f"Game Over! Hit wall. Final Score: {score}")
-            pygame.time.wait(3000)
-            pygame.quit()
-            sys.exit()
-        
-        # Check for self collision
-        if head in snake.body[1:]:
-            print(f"Game Over! Hit self. Final Score: {score}")
-            pygame.time.wait(3000)
-            pygame.quit()
-            sys.exit()
+        # --- AI Logic - Simple L1 Traversal ---
+        current_pos = snake.get_head_position()
+        next_pos = get_next_position_l1_traversal(current_pos, GRID_WIDTH, GRID_HEIGHT)
+
+        snake.move(next_pos)
         
         # Check for collision with food
-        if head == food.position:
+        if snake.get_head_position() == food.position:
             snake.grow()
             score += 1
-            food.randomize_position(snake.body)
-            print(f"Score: {score}")
-            
-            # Check if won
+            # If the snake fills the whole screen, we've won.
             if snake.length == GRID_WIDTH * GRID_HEIGHT:
                 print("Game Won! The snake has filled the board.")
+                # Drawing everything one last time to show the full snake
+                screen.fill(BLACK)
+                draw_grid(screen)
+                snake.draw(screen)
+                food.draw(screen)
+                score_text = font.render(f"Score: {score}", True, WHITE)
+                screen.blit(score_text, (10, 10))
+                pygame.display.flip()
                 pygame.time.wait(3000)
                 pygame.quit()
                 sys.exit()
+            
+            food.randomize_position(snake.body)
 
         # Drawing everything
         screen.fill(BLACK)
